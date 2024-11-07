@@ -12,7 +12,7 @@ func main() {
     http.Handle("/", fs)
 
     // API routes
-    http.HandleFunc("/api/notes", handleNotes)
+    http.HandleFunc("/api/notes", handleNotes) 
 
     log.Println("Server started at http://localhost:8000")
     log.Fatal(http.ListenAndServe(":8000", nil))
