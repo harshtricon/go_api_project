@@ -1,19 +1,27 @@
-
 package main
 
 import (
     "log"
+    "github.com/gin-gonic/gin"
     "net/http"
 )
 
 func main() {
-    // Serve static files
-    fs := http.FileServer(http.Dir("static"))
-    http.Handle("/", fs)
+    r := gin.Default()
 
-    // API routes
-    http.HandleFunc("/api/notes", handleNotes) 
+    // Serve static files
+    r.Static("/static", "./static")
+
+    // API routes with JWT middleware
+    r.POST("/api/login", loginHandler)
+    authorized := r.Group("/api")
+    authorized.Use(AuthMiddleware())
+    {
+        authorized.GET("/notes", handleGetNotes)
+        authorized.POST("/notes", handleCreateNote)
+        authorized.DELETE("/notes", handleDeleteNote)
+    }
 
     log.Println("Server started at http://localhost:8000")
-    log.Fatal(http.ListenAndServe(":8000", nil))
+    r.Run(":8000")
 }
