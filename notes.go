@@ -1,10 +1,11 @@
-// notes.go
 package main
 
 import (
+    "database/sql"
     "encoding/json"
+    "github.com/gin-gonic/gin"
     "net/http"
-    "os"
+    _ "github.com/go-sql-driver/mysql"
 )
 
 type Note struct {
@@ -12,60 +13,71 @@ type Note struct {
     Text string `json:"text"`
 }
 
-var notes []Note
-var nextID int
+var db *sql.DB
 
-func loadNotes() error {
-    file, err := os.Open("storage.json")
+func init() {
+    var err error
+    db, err = sql.Open("mysql", "user:admin@tcp(127.0.0.1:3306)/mynotes")
     if err != nil {
-        return err
+        panic("Failed to connect to MySQL: " + err.Error())
     }
-    defer file.Close()
-
-    decoder := json.NewDecoder(file)
-    return decoder.Decode(&notes)
 }
-
-func saveNotes() error {
-    file, err := os.Create("storage.json")
+func handleGetNotes(c *gin.Context) {
+    rows, err := db.Query("SELECT id, text FROM notes")
     if err != nil {
-        return err
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve notes"})
+        return
     }
-    defer file.Close()
+    defer rows.Close()
 
-    encoder := json.NewEncoder(file)
-    return encoder.Encode(notes)
-}
-
-func handleNotes(w http.ResponseWriter, r *http.Request) {
-    switch r.Method {
-    case http.MethodGet:
-        json.NewEncoder(w).Encode(notes)
-
-    case http.MethodPost:
+    var notes []Note
+    for rows.Next() {
         var note Note
-        json.NewDecoder(r.Body).Decode(&note)
-
-        note.ID = nextID
-        nextID++
+        if err := rows.Scan(&note.ID, &note.Text); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse note"})
+            return
+        }
         notes = append(notes, note)
-        saveNotes()
-        json.NewEncoder(w).Encode(note)
-
-    case http.MethodDelete:
-        var requestData struct {
-            ID int `json:"id"`
-        }
-        json.NewDecoder(r.Body).Decode(&requestData)
-
-        for i, note := range notes {
-            if note.ID == requestData.ID {
-                notes = append(notes[:i], notes[i+1:]...)
-                saveNotes()
-                w.WriteHeader(http.StatusOK)
-                return
-            }
-        }
-        http.Error(w, "Note not found", http.StatusNotFound)
     }
+
+    c.JSON(http.StatusOK, notes)
+}
+func handleCreateNote(c *gin.Context) {
+    var note Note
+    if err := c.BindJSON(&note); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+        return
+    }
+
+    _, err := db.Exec("INSERT INTO notes (text) VALUES (?)", note.Text)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create note"})
+        return
+    }
+
+    c.JSON(http.StatusCreated, note)
+}
+
+func handleDeleteNote(c *gin.Context) {
+    var request struct {
+        ID int `json:"id"`
+    }
+    if err := c.BindJSON(&request); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+        return
+    }
+
+    result, err := db.Exec("DELETE FROM notes WHERE id = ?", request.ID)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete note"})
+        return
+    }
+
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{"message": "Note deleted successfully"})
 }

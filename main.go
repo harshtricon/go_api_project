@@ -3,7 +3,6 @@ package main
 import (
     "log"
     "github.com/gin-gonic/gin"
-    "net/http"
 )
 
 func main() {
@@ -12,8 +11,10 @@ func main() {
     // Serve static files
     r.Static("/static", "./static")
 
-    // API routes with JWT middleware
+    // Public route for login
     r.POST("/api/login", loginHandler)
+
+    // Protected routes for notes with JWT middleware
     authorized := r.Group("/api")
     authorized.Use(AuthMiddleware())
     {
